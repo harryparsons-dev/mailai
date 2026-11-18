@@ -19,6 +19,6 @@ func InitializeRoutes(server *server.Server) {
 	server.E.POST("/signup", authHandler.SignUp)
 	server.E.POST("/login", authHandler.Login)
 	server.E.POST("/logout", authHandler.Logout)
-	server.E.GET("/refresh", authHandler.Refresh)
+	server.E.POST("/refresh", authHandler.Refresh)
 
 }

@@ -1,6 +1,8 @@
 package tests
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strings"
 	"testing"
@@ -189,19 +191,36 @@ func TestLogin(t *testing.T) {
 	}
 
 	TestServer.RunAll(t, cases)
+
+	storedTokens, err := TestServer.Db.NewSelect().Model((*models.UserToken)(nil)).Where("user_id = ?", user.ID).Count(t.Context())
+	if err != nil {
+		t.Fatalf("count stored refresh tokens: %v", err)
+	}
+	if storedTokens != 1 {
+		t.Errorf("stored refresh tokens: got %d, want 1", storedTokens)
+	}
 }
 
 func TestRefresh(t *testing.T) {
-	refreshToken, err := TestServer.JWT.SignRefreshToken(TestServer.User.ID)
+	refreshToken, err := TestServer.JWT.CreateRefreshToken(TestServer.User.ID)
 	if err != nil {
 		t.Fatalf("sign refresh token: %v", err)
+	}
+	refreshTokenHash := sha256.Sum256([]byte(refreshToken))
+	userToken := &models.UserToken{Token: hex.EncodeToString(refreshTokenHash[:]), UserId: TestServer.User.ID}
+	if _, err := TestServer.Db.NewInsert().Model(userToken).Exec(t.Context()); err != nil {
+		t.Fatalf("store refresh token fixture: %v", err)
+	}
+	unstoredRefreshToken, err := TestServer.JWT.CreateRefreshToken(TestServer.User.ID)
+	if err != nil {
+		t.Fatalf("sign unstored refresh token: %v", err)
 	}
 
 	cases := []pkg.TestCase{
 		{
 			TestName: "Refresh returns the signed-in user",
 			Request: pkg.Request{
-				Method:          http.MethodGet,
+				Method:          http.MethodPost,
 				Path:            "/refresh",
 				Headers:         map[string]string{"Cookie": "RefreshToken=" + refreshToken},
 				Unauthenticated: true,
@@ -218,9 +237,22 @@ func TestRefresh(t *testing.T) {
 			},
 		},
 		{
+			TestName: "Refresh with an already rotated refresh token is rejected",
+			Request: pkg.Request{
+				Method:          http.MethodPost,
+				Path:            "/refresh",
+				Headers:         map[string]string{"Cookie": "RefreshToken=" + refreshToken},
+				Unauthenticated: true,
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusUnauthorized,
+				Body:       "Invalid or expired refresh token",
+			},
+		},
+		{
 			TestName: "Refresh without a refresh token is rejected",
 			Request: pkg.Request{
-				Method:          http.MethodGet,
+				Method:          http.MethodPost,
 				Path:            "/refresh",
 				Unauthenticated: true,
 			},
@@ -230,11 +262,83 @@ func TestRefresh(t *testing.T) {
 			},
 		},
 		{
+			TestName: "Refresh with a refresh token that was never stored is rejected",
+			Request: pkg.Request{
+				Method:          http.MethodPost,
+				Path:            "/refresh",
+				Headers:         map[string]string{"Cookie": "RefreshToken=" + unstoredRefreshToken},
+				Unauthenticated: true,
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusUnauthorized,
+				Body:       "Invalid or expired refresh token",
+			},
+		},
+		{
 			TestName: "Refresh with an invalid refresh token is rejected",
 			Request: pkg.Request{
-				Method:          http.MethodGet,
+				Method:          http.MethodPost,
 				Path:            "/refresh",
 				Headers:         map[string]string{"Cookie": "RefreshToken=not-a-token"},
+				Unauthenticated: true,
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusUnauthorized,
+				Body:       "Invalid or expired refresh token",
+			},
+		},
+	}
+
+	TestServer.RunAll(t, cases)
+}
+
+func TestLogout(t *testing.T) {
+	refreshToken, err := TestServer.JWT.CreateRefreshToken(TestServer.User.ID)
+	if err != nil {
+		t.Fatalf("sign refresh token: %v", err)
+	}
+	refreshTokenHash := sha256.Sum256([]byte(refreshToken))
+	userToken := &models.UserToken{Token: hex.EncodeToString(refreshTokenHash[:]), UserId: TestServer.User.ID}
+	if _, err := TestServer.Db.NewInsert().Model(userToken).Exec(t.Context()); err != nil {
+		t.Fatalf("store refresh token fixture: %v", err)
+	}
+
+	cases := []pkg.TestCase{
+		{
+			TestName: "Can log out without a refresh token",
+			Request: pkg.Request{
+				Method:          http.MethodPost,
+				Path:            "/logout",
+				Unauthenticated: true,
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusOK,
+				Body: map[string]any{
+					"message": "Signed out successfully",
+				},
+			},
+		},
+		{
+			TestName: "Can log out with a refresh token",
+			Request: pkg.Request{
+				Method:          http.MethodPost,
+				Path:            "/logout",
+				Headers:         map[string]string{"Cookie": "RefreshToken=" + refreshToken},
+				Unauthenticated: true,
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusOK,
+				Body: map[string]any{
+					"message": "Signed out successfully",
+				},
+			},
+		},
+		{
+			TestName: "Refresh with a logged out refresh token is rejected",
+			Request: pkg.Request{
+				Method:          http.MethodPost,
+				Path:            "/refresh",
+				Headers:         map[string]string{"Cookie": "RefreshToken=" + refreshToken},
 				Unauthenticated: true,
 			},
 			ExpectedResult: pkg.ExpectedResult{

@@ -2,7 +2,7 @@
 
 An email-summary application under active development. The local development stack includes:
 
-- a Go API rebuilt and restarted by CompileDaemon on Go or migration changes
+- a Go API rebuilt and restarted by CompileDaemon on Go changes
 - a Vue/Vite frontend with hot module replacement
 - PostgreSQL 17 with persistent local storage
 
@@ -71,8 +71,9 @@ docker compose up --build
 ```
 
 During normal development, CompileDaemon polls the bind-mounted backend source
-and automatically rebuilds and restarts the API when a Go source file or SQL
-migration changes. The polling watcher works consistently with Docker Desktop
+and automatically rebuilds and restarts the API when a Go source file changes.
+Migrations are not applied on these rebuilds; restart the container with
+`docker compose restart api` to apply new migrations. The polling watcher works consistently with Docker Desktop
 bind mounts, including on macOS.
 
 Run the backend tests:
@@ -157,8 +158,9 @@ case, recreate the unapplied change as a new migration with a later timestamp.
 When the API starts, it compares those files with the version stored in the
 database's `migrations` table and applies every pending up migration in order.
 If a migration fails, the API exits instead of serving against an outdated
-schema. In development, changes to migration SQL also trigger an API rebuild so
-the embedded migration set stays current.
+schema. In development, migrations run once when the API container starts, not
+when CompileDaemon rebuilds the API, so a half-written migration is never
+applied. Run `docker compose restart api` once a new migration is ready.
 
 Run the frontend type checker:
 

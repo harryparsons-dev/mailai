@@ -7,7 +7,7 @@ RUN go mod download
 
 COPY . .
 
-CMD ["go", "tool", "CompileDaemon", "-build=go build -buildvcs=false -o /tmp/mailai ./main", "-command=/tmp/mailai", "-pattern=(.+\\.go|.+\\.sql)$", "-exclude-dir=.git", "-exclude-dir=frontend", "-exclude-dir=tmp", "-polling", "-polling-interval=200", "-graceful-kill"]
+CMD ["sh", "-c", "go build -buildvcs=false -o /tmp/mailai ./main && /tmp/mailai -migrate-only && exec go tool CompileDaemon '-build=go build -buildvcs=false -o /tmp/mailai ./main' '-command=/tmp/mailai -skip-migrations' '-pattern=.+\\.go$' -exclude-dir=.git -exclude-dir=frontend -exclude-dir=tmp -polling -polling-interval=200 -graceful-kill"]
 
 FROM development AS build
 

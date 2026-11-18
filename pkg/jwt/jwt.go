@@ -6,6 +6,7 @@ import (
 	"time"
 
 	gojwt "github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 const (
@@ -22,10 +23,7 @@ type Config struct {
 	SigningKey      []byte
 	AccessLifetime  time.Duration
 	RefreshLifetime time.Duration
-
-	// SecureCookies marks the auth cookies as HTTPS-only. Enable it wherever
-	// the site is served over HTTPS; it stays off for local HTTP development.
-	SecureCookies bool
+	SecureCookies   bool
 }
 
 type jwtClaims struct {
@@ -46,15 +44,7 @@ func NewConfig(secret string) (*Config, error) {
 	}, nil
 }
 
-func (c *Config) SignAccessToken(userID string) (string, error) {
-	return c.signToken(userID, accessTokenType, c.AccessLifetime)
-}
-
-func (c *Config) SignRefreshToken(userID string) (string, error) {
-	return c.signToken(userID, refreshTokenType, c.RefreshLifetime)
-}
-
-func (c *Config) signToken(userID, tokenType string, lifetime time.Duration) (string, error) {
+func (c *Config) CreateAccessToken(userID string) (string, error) {
 	if userID == "" {
 		return "", errors.New("cannot sign a token without a user ID")
 	}
@@ -62,9 +52,28 @@ func (c *Config) signToken(userID, tokenType string, lifetime time.Duration) (st
 	now := time.Now()
 	token := gojwt.NewWithClaims(gojwt.SigningMethodHS256, jwtClaims{
 		UserID:    userID,
-		TokenType: tokenType,
+		TokenType: accessTokenType,
 		RegisteredClaims: gojwt.RegisteredClaims{
-			ExpiresAt: gojwt.NewNumericDate(now.Add(lifetime)),
+			ExpiresAt: gojwt.NewNumericDate(now.Add(c.AccessLifetime)),
+			IssuedAt:  gojwt.NewNumericDate(now),
+		},
+	})
+
+	return token.SignedString(c.SigningKey)
+}
+
+func (c *Config) CreateRefreshToken(userID string) (string, error) {
+	if userID == "" {
+		return "", errors.New("cannot sign a token without a user ID")
+	}
+
+	now := time.Now()
+	token := gojwt.NewWithClaims(gojwt.SigningMethodHS256, jwtClaims{
+		UserID:    userID,
+		TokenType: refreshTokenType,
+		RegisteredClaims: gojwt.RegisteredClaims{
+			ID:        uuid.NewString(),
+			ExpiresAt: gojwt.NewNumericDate(now.Add(c.RefreshLifetime)),
 			IssuedAt:  gojwt.NewNumericDate(now),
 		},
 	})

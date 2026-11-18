@@ -23,7 +23,7 @@ func TestJWTConfigSignsAndVerifiesAccessToken(t *testing.T) {
 		t.Fatalf("NewConfig() error = %v", err)
 	}
 
-	token, err := jwtConfig.SignAccessToken("user-123")
+	token, err := jwtConfig.CreateAccessToken("user-123")
 	if err != nil {
 		t.Fatalf("SignAccessToken() error = %v", err)
 	}
@@ -44,11 +44,11 @@ func TestJWTConfigKeepsRefreshTokenValidAfterAccessTokenExpires(t *testing.T) {
 	}
 	jwtConfig.AccessLifetime = -time.Minute
 
-	accessToken, err := jwtConfig.SignAccessToken("user-123")
+	accessToken, err := jwtConfig.CreateAccessToken("user-123")
 	if err != nil {
 		t.Fatalf("SignAccessToken() error = %v", err)
 	}
-	refreshToken, err := jwtConfig.SignRefreshToken("user-123")
+	refreshToken, err := jwtConfig.CreateRefreshToken("user-123")
 	if err != nil {
 		t.Fatalf("SignRefreshToken() error = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestJWTConfigDoesNotAcceptAccessTokenAsRefreshToken(t *testing.T) {
 		t.Fatalf("NewConfig() error = %v", err)
 	}
 
-	accessToken, err := jwtConfig.SignAccessToken("user-123")
+	accessToken, err := jwtConfig.CreateAccessToken("user-123")
 	if err != nil {
 		t.Fatalf("SignAccessToken() error = %v", err)
 	}
@@ -111,5 +111,25 @@ func TestJWTConfigRejectsTokenWithoutExpiration(t *testing.T) {
 
 	if _, err := jwtConfig.VerifyAccessToken(token); err == nil {
 		t.Fatal("VerifyAccessToken() accepted a token without an expiration")
+	}
+}
+
+func TestJWTConfigCreatesUniqueRefreshTokens(t *testing.T) {
+	config, err := NewConfig(testJWTSecret)
+	if err != nil {
+		t.Fatalf("NewConfig() error = %v", err)
+	}
+
+	first, err := config.CreateRefreshToken("user-id")
+	if err != nil {
+		t.Fatalf("CreateRefreshToken() error = %v", err)
+	}
+	second, err := config.CreateRefreshToken("user-id")
+	if err != nil {
+		t.Fatalf("CreateRefreshToken() error = %v", err)
+	}
+
+	if first == second {
+		t.Error("CreateRefreshToken() returned the same token twice for one user")
 	}
 }

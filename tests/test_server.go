@@ -115,7 +115,7 @@ func NewTestServer() (*APITestServer, error) {
 		return nil, fmt.Errorf("create test user: %w", err)
 	}
 
-	accessToken, err := jwtConfig.SignAccessToken(user.ID)
+	accessToken, err := jwtConfig.CreateAccessToken(user.ID)
 	if err != nil {
 		s.Close()
 		return nil, fmt.Errorf("create test access token: %w", err)

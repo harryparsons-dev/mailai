@@ -54,7 +54,10 @@ export async function logout(): Promise<AuthResponse> {
 
 export async function refresh(): Promise<User> {
   try {
-    const response = await apiRequest<User>('/refresh', { skipSessionRefresh: true })
+    const response = await apiRequest<User>('/refresh', {
+      method: 'POST',
+      skipSessionRefresh: true,
+    })
     authenticated.value = true
     user.value = response
     return response

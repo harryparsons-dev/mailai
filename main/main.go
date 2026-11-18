@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"flag"
 
 	"log"
 	"mailai/database/migrations"
@@ -25,6 +26,10 @@ import (
 )
 
 func main() {
+	migrateOnly := flag.Bool("migrate-only", false, "apply database migrations and exit")
+	skipMigrations := flag.Bool("skip-migrations", false, "start without applying database migrations")
+	flag.Parse()
+
 	jwtConfig, err := jwt.NewConfig(os.Getenv("SECRET_KEY"))
 	if err != nil {
 		log.Fatal(err)
@@ -67,9 +72,15 @@ func main() {
 		log.Fatalf("Unable to connect to database: %v", err)
 	}
 
-	if err := migrations.Up(db); err != nil {
+	if !*skipMigrations {
+		if err := migrations.Up(db); err != nil {
+			_ = db.Close()
+			log.Fatalf("Unable to apply database migrations: %v", err)
+		}
+	}
+	if *migrateOnly {
 		_ = db.Close()
-		log.Fatalf("Unable to apply database migrations: %v", err)
+		return
 	}
 
 	if os.Getenv("ANTHROPIC_API_KEY") == "" {

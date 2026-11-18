@@ -8,23 +8,35 @@ import (
 )
 
 func TestGenerateAddress(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 1000; i++ {
-		address, err := inbound.GenerateAddress("Mail.Example.com")
-		if err != nil {
-			t.Fatal(err)
-		}
-		local, domain, ok := strings.Cut(address, "@")
-		if !ok || domain != "mail.example.com" {
-			t.Fatalf("unexpected address %q", address)
-		}
-		if len(local) != 12 || strings.Trim(local, "abcdefghijkmnpqrstuvwxyz23456789") != "" {
-			t.Fatalf("unexpected local part %q", local)
-		}
-		if seen[address] {
-			t.Fatalf("duplicate address %q", address)
-		}
-		seen[address] = true
+	cases := []struct {
+		name    string
+		project string
+		attempt int
+		want    string
+	}{
+		{"short name", "Inbox", 1, "inbox@mail.example.com"},
+		{"words joined with hyphens", "My App", 1, "my-app@mail.example.com"},
+		{"cut to ten characters", "Daily summary", 1, "daily-summ@mail.example.com"},
+		{"no trailing hyphen after cut", "Marketing team", 1, "marketing@mail.example.com"},
+		{"symbols and spaces collapse", "  --Q4 // Sales!! ", 1, "q4-sales@mail.example.com"},
+		{"non-ASCII letters dropped", "Café Ünits", 1, "caf-nits@mail.example.com"},
+		{"nothing usable falls back", "日本語 !!!", 1, "project@mail.example.com"},
+		{"second attempt adds suffix", "Inbox", 2, "inbox-2@mail.example.com"},
+		{"suffix replaces end of long slug", "Daily summary", 2, "daily-su-2@mail.example.com"},
+		{"suffix trims hyphen left by cut", "Daily summary", 10, "daily-s-10@mail.example.com"},
+		{"suffix on hyphen boundary", "abcdefg hij", 2, "abcdefg-2@mail.example.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := inbound.GenerateAddress("Mail.Example.com", tc.project, tc.attempt)
+			if got != tc.want {
+				t.Fatalf("GenerateAddress(%q, %d) = %q, want %q", tc.project, tc.attempt, got, tc.want)
+			}
+			local, _, _ := strings.Cut(got, "@")
+			if len(local) > 10 {
+				t.Fatalf("local part %q is longer than 10 characters", local)
+			}
+		})
 	}
 }
 

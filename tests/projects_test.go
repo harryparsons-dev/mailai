@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -254,6 +255,66 @@ func TestProjectsCreate(t *testing.T) {
 			ExpectedResult: pkg.ExpectedResult{
 				StatusCode: http.StatusBadRequest,
 				Body:       "Invalid request body",
+			},
+		},
+	}
+
+	TestServer.RunAll(t, cases)
+}
+
+func TestProjectsCreateEmailAddress(t *testing.T) {
+	// The test database outlives a single run, so clear any projects holding
+	// this test's addresses before and after it to keep the slug free.
+	deleteFixtures := func() {
+		_, err := TestServer.Db.NewDelete().
+			Model(&models.Project{}).
+			Where("email_address LIKE ?", "slug-cla%@example.com").
+			WhereAllWithDeleted().
+			ForceDelete().
+			Exec(context.Background())
+		if err != nil {
+			t.Fatalf("delete email address fixtures: %v", err)
+		}
+	}
+	deleteFixtures()
+	t.Cleanup(deleteFixtures)
+
+	request := pkg.Request{
+		Method: http.MethodPost,
+		Path:   "/projects",
+	}
+
+	cases := []pkg.TestCase{
+		{
+			TestName: "Email address is the slugified project name",
+			Request:  request,
+			RequestBody: map[string]any{
+				"name":        "Slug clash test",
+				"description": "First project with this name",
+				"status":      "pending",
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusCreated,
+				Body: map[string]any{
+					"name":          "Slug clash test",
+					"email_address": "slug-clash@example.com",
+				},
+			},
+		},
+		{
+			TestName: "Email address gets a numbered suffix when the slug is taken",
+			Request:  request,
+			RequestBody: map[string]any{
+				"name":        "Slug clash test",
+				"description": "Second project with this name",
+				"status":      "pending",
+			},
+			ExpectedResult: pkg.ExpectedResult{
+				StatusCode: http.StatusCreated,
+				Body: map[string]any{
+					"name":          "Slug clash test",
+					"email_address": "slug-cla-2@example.com",
+				},
 			},
 		},
 	}

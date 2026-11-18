@@ -101,11 +101,24 @@ func (h *ProjectHandler) Create(c *echo.Context) error {
 		return responses.Error(c, http.StatusBadRequest, "Invalid request body")
 	}
 
-	// Each project gets a newly generated inbound email address.
-	address, err := inbound.GenerateAddress(h.Server.Dependencies.InboundDomain)
-	if err != nil {
-		log.Printf("Unexpected error generating project email address: %v", err)
-		return responses.Error(c, http.StatusInternalServerError, "Failed to create project")
+	// Each project's inbound address is its slugified name. Addresses are
+	// unique across all projects, including soft-deleted ones, so try
+	// numbered variants until one is free.
+	var address string
+	for attempt := 1; ; attempt++ {
+		address = inbound.GenerateAddress(h.Server.Dependencies.InboundDomain, request.Name, attempt)
+		taken, err := h.Server.Db.NewSelect().
+			Model(&models.Project{}).
+			Where("email_address = ?", address).
+			WhereAllWithDeleted().
+			Exists(ctx)
+		if err != nil {
+			log.Printf("Unexpected error checking project email address: %v", err)
+			return responses.Error(c, http.StatusInternalServerError, "Failed to create project")
+		}
+		if !taken {
+			break
+		}
 	}
 
 	project := &models.Project{
@@ -116,7 +129,7 @@ func (h *ProjectHandler) Create(c *echo.Context) error {
 		UserId:       user.ID,
 	}
 
-	_, err = h.Server.Db.NewInsert().Model(project).Exec(ctx)
+	_, err := h.Server.Db.NewInsert().Model(project).Exec(ctx)
 	if err != nil {
 		log.Printf("Unexpected error creating project: %v", err)
 		return responses.Error(c, http.StatusInternalServerError, "Failed to create project")

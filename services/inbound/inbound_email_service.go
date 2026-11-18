@@ -3,7 +3,6 @@ package inbound
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -104,22 +103,58 @@ func (s *InboundEmailService) Deliver(ctx context.Context, envelopeFrom string, 
 	return nil
 }
 
-// localPartAlphabet avoids characters that are easy to misread (0/o, 1/l).
-const localPartAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
+// maxLocalPartLength caps the part of a project address before the "@".
+const maxLocalPartLength = 10
 
-const localPartLength = 12
+// fallbackLocalPart is used when a project name has no ASCII letters or digits.
+const fallbackLocalPart = "project"
 
-// GenerateAddress returns a new random address such as "k3x9p2qahm7d@domain".
-func GenerateAddress(domain string) (string, error) {
-	buf := make([]byte, localPartLength)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generate email address: %w", err)
+// GenerateAddress returns the inbound address for a project called name, such
+// as "daily-summ@domain" for "Daily summary". The local part is the slugified
+// name, at most maxLocalPartLength characters. Addresses must be unique, so
+// callers try attempt 1, 2, 3... until one is free; attempts after the first
+// replace the end of the slug with "-<attempt>", for example "daily-su-2".
+func GenerateAddress(domain, name string, attempt int) string {
+	slug := Slugify(name)
+
+	suffix := ""
+	if attempt > 1 {
+		suffix = fmt.Sprintf("-%d", attempt)
 	}
-	for i, b := range buf {
-		// 256 is a multiple of the 32-character alphabet, so this is unbiased.
-		buf[i] = localPartAlphabet[int(b)%len(localPartAlphabet)]
+	if len(slug)+len(suffix) > maxLocalPartLength {
+		slug = strings.TrimRight(slug[:maxLocalPartLength-len(suffix)], "-")
 	}
-	return string(buf) + "@" + strings.ToLower(domain), nil
+
+	return slug + suffix + "@" + strings.ToLower(domain)
+}
+
+// Slugify lowercases name and keeps only ASCII letters and digits, joining
+// words with single hyphens, then cuts the result to maxLocalPartLength
+// characters. A name with nothing usable becomes fallbackLocalPart.
+func Slugify(name string) string {
+	var slug strings.Builder
+	pendingHyphen := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			if pendingHyphen && slug.Len() > 0 {
+				slug.WriteByte('-')
+			}
+			pendingHyphen = false
+			slug.WriteRune(r)
+		default:
+			pendingHyphen = true
+		}
+	}
+
+	result := strings.TrimRight(slug.String(), "-")
+	if len(result) > maxLocalPartLength {
+		result = strings.TrimRight(result[:maxLocalPartLength], "-")
+	}
+	if result == "" {
+		return fallbackLocalPart
+	}
+	return result
 }
 
 // NormalizeAddress lowercases an address and strips surrounding whitespace and
